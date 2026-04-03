@@ -7,15 +7,54 @@
 
 // Heavily based on ccalc 0.5.1 by Walery Studennikov <hqsoftware@mail.ru>
 
+#ifdef _WIN32
 #include "StdAfx.h"
+#else
+#include <climits>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cwchar>
+#include <cwctype>
+
+using BYTE = unsigned char;
+using UCHAR = unsigned char;
+
+#ifndef _countof
+#define _countof(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
+
+static int RMWcsNICmp(const wchar_t* a, const wchar_t* b, size_t n)
+{
+	for (size_t i = 0; i < n; ++i)
+	{
+		const wint_t ac = std::towlower(a[i]);
+		const wint_t bc = std::towlower(b[i]);
+		if (ac != bc)
+		{
+			return ac < bc ? -1 : 1;
+		}
+		if (a[i] == L'\0')
+		{
+			return 0;
+		}
+	}
+
+	return 0;
+}
+
+#define _wcsnicmp RMWcsNICmp
+#define _TRUNCATE 0
+#define _snwprintf_s(buffer, trunc, format, arg) std::swprintf((buffer), _countof(buffer), (format), (arg))
+#endif
 #include "MathParser.h"
 
 #include <string>
 
 namespace MathParser {
 
-static const double M_E = 2.7182818284590452354;
-static const double M_PI = 3.14159265358979323846;
+static const double RM_MATH_E = 2.7182818284590452354;
+static const double RM_MATH_PI = 3.14159265358979323846;
 
 typedef double (*SingleArgFunction)(double arg);
 typedef const WCHAR* (*MultiArgFunction)(int paramcnt, double* args, double* result);
@@ -408,11 +447,11 @@ const WCHAR* Parse(
 					switch (op.funcIndex)
 					{
 					case FUNC_E:
-						parser.numStack[++parser.valTop] = M_E;
+						parser.numStack[++parser.valTop] = RM_MATH_E;
 						break;
 
 					case FUNC_PI:
-						parser.numStack[++parser.valTop] = M_PI;
+						parser.numStack[++parser.valTop] = RM_MATH_PI;
 						break;
 
 					case FUNC_ATAN2:
@@ -883,12 +922,12 @@ static double frac(double x)
 
 static double rad(double deg)
 {
-	return (deg / 180.0) * M_PI;
+	return (deg / 180.0) * RM_MATH_PI;
 }
 
 static double deg(double rad)
 {
-	return rad * (180.0 / M_PI);
+	return rad * (180.0 / RM_MATH_PI);
 }
 
 static double sgn(double x)
