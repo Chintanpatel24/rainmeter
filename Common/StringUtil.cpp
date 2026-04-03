@@ -5,7 +5,17 @@
  * version. If a copy of the GPL was not distributed with this file, You can
  * obtain one at <https://www.gnu.org/licenses/gpl-2.0.html>. */
 
+#ifdef _WIN32
 #include "StdAfx.h"
+#else
+#include <algorithm>
+#include <cctype>
+#include <codecvt>
+#include <cstdio>
+#include <cstring>
+#include <cwchar>
+#include <locale>
+#endif
 #include "StringUtil.h"
 
 namespace {
@@ -32,12 +42,34 @@ std::string Narrow(const WCHAR* str, int strLen, int cp)
 			strLen = (int)wcslen(str);
 		}
 
+	#ifdef _WIN32
 		int bufLen = WideCharToMultiByte(cp, 0, str, strLen, nullptr, 0, nullptr, nullptr);
 		if (bufLen > 0)
 		{
 			narrowStr.resize(bufLen);
 			WideCharToMultiByte(cp, 0, str, strLen, &narrowStr[0], bufLen, nullptr, nullptr);
 		}
+	#else
+		std::wstring input(str, strLen);
+		if (cp == CP_UTF8)
+		{
+			std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+			narrowStr = converter.to_bytes(input);
+		}
+		else
+		{
+			std::mbstate_t state{};
+			const wchar_t* src = input.c_str();
+			size_t len = std::wcsrtombs(nullptr, &src, 0, &state);
+			if (len != static_cast<size_t>(-1))
+			{
+				narrowStr.resize(len);
+				state = std::mbstate_t{};
+				src = input.c_str();
+				std::wcsrtombs(&narrowStr[0], &src, narrowStr.size(), &state);
+			}
+		}
+	#endif
 	}
 	return narrowStr;
 }
@@ -53,12 +85,34 @@ std::wstring Widen(const char* str, int strLen, int cp)
 			strLen = (int)strlen(str);
 		}
 
+	#ifdef _WIN32
 		int bufLen = MultiByteToWideChar(cp, 0, str, strLen, nullptr, 0);
 		if (bufLen > 0)
 		{
 			wideStr.resize(bufLen);
 			MultiByteToWideChar(cp, 0, str, strLen, &wideStr[0], bufLen);
 		}
+	#else
+		std::string input(str, strLen);
+		if (cp == CP_UTF8)
+		{
+			std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+			wideStr = converter.from_bytes(input);
+		}
+		else
+		{
+			std::mbstate_t state{};
+			const char* src = input.c_str();
+			size_t len = std::mbsrtowcs(nullptr, &src, 0, &state);
+			if (len != static_cast<size_t>(-1))
+			{
+				wideStr.resize(len);
+				state = std::mbstate_t{};
+				src = input.c_str();
+				std::mbsrtowcs(&wideStr[0], &src, wideStr.size(), &state);
+			}
+		}
+	#endif
 	}
 	return wideStr;
 }
@@ -99,23 +153,57 @@ size_t StripLeadingAndTrailingQuotes(std::wstring& str, bool single)
 
 void ToLowerCase(std::wstring& str)
 {
+	if (str.empty()) return;
+
+#ifdef _WIN32
 	WCHAR* srcAndDest = &str[0];
 	int strAndDestLen = (int)str.length();
 	LCMapString(LOCALE_USER_DEFAULT, LCMAP_LOWERCASE, srcAndDest, strAndDestLen, srcAndDest, strAndDestLen);
+#else
+	std::transform(str.begin(), str.end(), str.begin(), [](wchar_t ch) { return std::towlower(ch); });
+#endif
 }
 
 void ToUpperCase(std::wstring& str)
 {
+	if (str.empty()) return;
+
+#ifdef _WIN32
 	WCHAR* srcAndDest = &str[0];
 	int strAndDestLen = (int)str.length();
 	LCMapString(LOCALE_USER_DEFAULT, LCMAP_UPPERCASE, srcAndDest, strAndDestLen, srcAndDest, strAndDestLen);
+#else
+	std::transform(str.begin(), str.end(), str.begin(), [](wchar_t ch) { return std::towupper(ch); });
+#endif
 }
 
 void ToProperCase(std::wstring& str)
 {
+	if (str.empty()) return;
+
+#ifdef _WIN32
 	WCHAR* srcAndDest = &str[0];
 	int strAndDestLen = (int)str.length();
 	LCMapString(LOCALE_USER_DEFAULT, LCMAP_TITLECASE, srcAndDest, strAndDestLen, srcAndDest, strAndDestLen);
+#else
+	bool uppercaseNext = true;
+	for (wchar_t& ch : str)
+	{
+		if (std::iswspace(ch))
+		{
+			uppercaseNext = true;
+		}
+		else if (uppercaseNext)
+		{
+			ch = std::towupper(ch);
+			uppercaseNext = false;
+		}
+		else
+		{
+			ch = std::towlower(ch);
+		}
+	}
+#endif
 }
 
 void ToSentenceCase(std::wstring& str)
@@ -131,8 +219,12 @@ void ToSentenceCase(std::wstring& str)
 
 			if (!isCapped && iswalpha(str[i]) != 0)
 			{
+			#ifdef _WIN32
 				WCHAR* srcAndDest = &str[i];
 				LCMapString(LOCALE_USER_DEFAULT, LCMAP_UPPERCASE, srcAndDest, 1, srcAndDest, 1);
+			#else
+				str[i] = std::towupper(str[i]);
+			#endif
 				isCapped = true;
 			}
 		}
@@ -161,13 +253,13 @@ void EncodeUrl(std::wstring& str, bool doReserved)
 	std::string utf8 = NarrowUTF8(str);
 	for (size_t pos = 0; pos < utf8.size(); ++pos)
 	{
-		UCHAR ch = utf8[pos];
+		unsigned char ch = static_cast<unsigned char>(utf8[pos]);
 		if ((ch <= 0x20 || ch >= 0x7F) ||                              // control characters and non-ascii (includes space)
 			(doReserved && unreserved.find(ch) == std::string::npos))  // any character other than unreserved characters
 		{
 			char buffer[3];
-			_snprintf_s(buffer, _countof(buffer), "%.2X", ch);
-			utf8[pos] = L'%';
+			std::snprintf(buffer, sizeof(buffer), "%.2X", ch);
+			utf8[pos] = '%';
 			utf8.insert(pos + 1, buffer);
 			pos += 2;
 		}
@@ -181,7 +273,13 @@ void EncodeUrl(std::wstring& str, bool doReserved)
 bool CaseInsensitiveCompareN(std::wstring& str1, const std::wstring& str2)
 {
 	size_t pos = str2.length();
-	if (_wcsnicmp(str1.c_str(), str2.c_str(), pos) == 0)
+	bool equal = str1.length() >= pos;
+	for (size_t i = 0; equal && i < pos; ++i)
+	{
+		equal = std::towlower(str1[i]) == std::towlower(str2[i]);
+	}
+
+	if (equal)
 	{
 		str1 = str1.substr(pos);  // remove str2 from str1
 		str1.erase(0, str1.find_first_not_of(L" \t\r\n"));  // remove any leading whitespace
