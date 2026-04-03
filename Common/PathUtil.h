@@ -8,7 +8,14 @@
 #ifndef RM_COMMON_PATHUTIL_H_
 #define RM_COMMON_PATHUTIL_H_
 
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <wchar.h>
+
+using WCHAR = wchar_t;
+#endif
+
 #include <string>
 
 namespace PathUtil {
