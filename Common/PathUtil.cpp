@@ -5,7 +5,13 @@
  * version. If a copy of the GPL was not distributed with this file, You can
  * obtain one at <https://www.gnu.org/licenses/gpl-2.0.html>. */
 
+#ifdef _WIN32
 #include "StdAfx.h"
+#else
+#include <cstdlib>
+#include <cwctype>
+#include <string>
+#endif
 #include "PathUtil.h"
 
 namespace PathUtil {
@@ -106,6 +112,7 @@ std::wstring GetVolume(const std::wstring& path)
 
 void ExpandEnvironmentVariables(std::wstring& path)
 {
+	#ifdef _WIN32
 	std::wstring::size_type pos;
 	if ((pos = path.find(L'%')) != std::wstring::npos &&
 		path.find(L'%', pos + 2) != std::wstring::npos)
@@ -157,6 +164,35 @@ void ExpandEnvironmentVariables(std::wstring& path)
 		delete [] buffer;
 		buffer = nullptr;
 	}
+	#else
+	std::wstring::size_type start = 0;
+	while ((start = path.find(L'%', start)) != std::wstring::npos)
+	{
+		std::wstring::size_type end = path.find(L'%', start + 1);
+		if (end == std::wstring::npos || end <= start + 1)
+		{
+			break;
+		}
+
+		std::wstring token = path.substr(start + 1, end - start - 1);
+		std::string key(token.begin(), token.end());
+		const char* value = std::getenv(key.c_str());
+		if (value)
+		{
+			std::wstring wValue;
+			for (const char* p = value; *p != '\0'; ++p)
+			{
+				wValue.push_back(static_cast<unsigned char>(*p));
+			}
+			path.replace(start, end - start + 1, wValue);
+			start += wValue.length();
+		}
+		else
+		{
+			start = end + 1;
+		}
+	}
+	#endif
 }
 
 }  // namespace PathUtil
