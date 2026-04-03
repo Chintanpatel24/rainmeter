@@ -8,7 +8,17 @@
 #ifndef RM_COMMON_STRINGUTIL_H_
 #define RM_COMMON_STRINGUTIL_H_
 
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <wchar.h>
+
+using WCHAR = wchar_t;
+
+constexpr int CP_ACP = 0;
+constexpr int CP_UTF8 = 65001;
+#endif
+
 #include <algorithm>
 #include <cwctype>
 #include <locale>
@@ -66,8 +76,8 @@ bool CaseInsensitiveCompareN(std::wstring& str1, const std::wstring& str2);
 template<typename T>
 std::size_t CaseInsensitiveFind(const T& str1, const T& str2, const std::locale& loc = std::locale())
 {
-	T::const_iterator iter = std::search(str1.begin(), str1.end(),
-		str2.begin(), str2.end(), Is_Equal<T::value_type>(loc));
+	typename T::const_iterator iter = std::search(str1.begin(), str1.end(),
+		str2.begin(), str2.end(), Is_Equal<typename T::value_type>(loc));
 
 	if (iter != str1.end())
 	{
